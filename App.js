@@ -5,7 +5,7 @@ import { apiCall } from './src/api/openAI'
 
 export default function App() {
   useEffect(()=>{
-apiCall('what is quantam')
+// apiCall('create an image of dog')
   },[])
   return (
     <AppNavigation/>

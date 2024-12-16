@@ -1,39 +1,56 @@
-import { Image, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
-import React, { useEffect, useState } from 'react'
+import { Alert, Image, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
+import React, { useEffect, useRef, useState } from 'react'
 import {widthPercentageToDP as wp, heightPercentageToDP as hp} from 'react-native-responsive-screen';
 import Features from './features';
 import { dummyMessages } from '../constants';
 import FastImage from 'react-native-fast-image';
 import Voice from '@react-native-voice/voice';
+import { apiCall } from '../api/openAI';
+import Tts from 'react-native-tts';
+
 
 const HomeScreen = () => {
-  const [messages,setMessages]=useState(dummyMessages);
+  const [messages,setMessages]=useState([]);
   const [recording,setRecording] =useState(false)
   const[speaking,setSpeaking]=useState(false)
   const [result,setResult]=useState('')
+  const [loading,setLoading]=useState(false);
+
+  const ScrollViewRef=useRef()
   const speechStartHandler=(e)=>{
     console.log("speechStart")
   }
   const speechEndHandler=(e)=>{
     setRecording(false)
-    console.log("speechend")
+    console.log("speechend >>>>>>>>>>>>",e)
   }
   const speechResultsHandler=(e)=>{
-    setResult(e.value[0]);
-    console.log("speechresult",e)
+    const text=e.value[0];
+
+    setResult(text);
+    console.log("speechresult....................",text)
+    fetchResponse();
   }
   const speechErrorHandler=(e)=>{
     console.log("speecherror",e)
   }
   const clear=()=>{
     setMessages([])
+    Tts.stop();
+
     
   }
   const stopSpeaking=()=>{
+    Tts.stop();
     setSpeaking(false)
+  
   }
   const startRecording=async()=>{
     setRecording(true)
+    Tts.stop();
+    setSpeaking(false)
+
+
     try{
       await Voice.start('en-GB')
     }catch(error){
@@ -42,19 +59,76 @@ const HomeScreen = () => {
     }
   }
   const stopRecording=async()=>{
-    setRecording(false)
     try{
       await Voice.stop()
+      setRecording(false)
+      console.log("harshuuuu")
+      fetchResponse();
+
     }catch(error){
       console.log(error)
 
     }}
+    const fetchResponse=()=>{
+      if(result.trim().length>0){
+        let newMessages=[...messages];
+        newMessages.push({role:'user', content: result.trim()})
+        setMessages([...newMessages]);
+        updateScrollView();
+        setLoading(true)
+        apiCall(result.trim(),newMessages).then(res=>{
+          console.log("got api data", res); 
+          setLoading(false)
+          if(res.success){
+            setMessages([...res.data]);
+            updateScrollView();
+            setResult('');
+            startTextTospeech(res.data[res.data.length-1]);
+          }
+          else{
+            Alert.alert('Error',res.msg)
+          }
+        })
+      }
+    }
+    
+    const startTextTospeech=message=>{
+      console.log("hahahah")
+      if(!message.content.includes('https')){
+        setSpeaking(true)
+        Tts.speak(message.content, {
+          androidParams: {
+            KEY_PARAM_PAN: -1,
+            KEY_PARAM_VOLUME: 0.5,
+            KEY_PARAM_STREAM: 'STREAM_MUSIC',
+          },
+        });
+
+    }}
+    const updateScrollView=()=>{
+      setTimeout(()=>{
+        ScrollViewRef?.current?.scrollToEnd({animated:true})
+      },200)
+    }
+    useEffect(() => {
+      // Trigger API call when the result is updated
+      if (result.trim().length > 0 && recording === false) {
+        fetchResponse();
+      }
+    }, [result]);
   
   useEffect(()=>{
+    //voice handlers
     Voice.onSpeechStart=speechStartHandler;
     Voice.onSpeechEnd=speechEndHandler;
     Voice.onSpeechResults=speechResultsHandler;
     Voice.onSpeechError=speechErrorHandler;
+
+    //tts handlers
+    Tts.addEventListener('tts-start', (event) => console.log("start", event));
+Tts.addEventListener('tts-progress', (event) => console.log("progress", event));
+Tts.addEventListener('tts-finish', (event) => {console.log("finish", event); setSpeaking(false)});
+Tts.addEventListener('tts-cancel', (event) => console.log("cancel", event));
 
     return()=>{
       Voice.destroy().then(Voice.removeAllListeners);
@@ -73,10 +147,13 @@ const HomeScreen = () => {
 
         {
           messages.length>0?(
+            
             <View className="space-y-2 flex-1">
               <Text style={{fontSize:wp(5)}} className="text-gray-700 font-semibold ml-1"> Assistant</Text>
               <View style={{height:hp(58)}} className="bg-neutral-200 rounded-3xl p-4">
-              <ScrollView bounces={false} className="space-y-4" showsVerticalScrollIndicator={false}>
+              <ScrollView
+              ref={ScrollViewRef}
+              bounces={false} className="space-y-4" showsVerticalScrollIndicator={false}>
                 {
                   messages.map((message,index)=>{
                     console.log("Message at index", index, message);
@@ -129,6 +206,11 @@ const HomeScreen = () => {
         {/* */}
         <View className="flex justify-center items-center">
           {
+            loading?(
+                <FastImage source={require("../../assets/images/loading.gif")}
+                
+                style={{width:hp(10),height:hp(10)}}/>
+            ):
             recording?(
               <TouchableOpacity onPress={stopRecording}>
                 <FastImage
