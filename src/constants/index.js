@@ -1,2 +1,2 @@
-export const apiKey=''
+export const apiKey='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'
 
